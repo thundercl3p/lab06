@@ -31,7 +31,7 @@ jobs:
       - name: Test executables
         run: |
           echo "1 -5 6" | _build/solver_application/solver_app
-          _build/hello_world_application/hello
+          _build/hello_world_application/hello_world
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -39,70 +39,3 @@ jobs:
           name: linux-build-${{matrix.config.c_comp}}
           path: _build/
           retention-days: 1
-
-  create-packages:
-    name: Create DEB and RPM Packages
-    needs: linux-build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create required CPack files
-        run: |
-          echo "Simple project description" > DESCRIPTION
-          echo "MIT License" > LICENSE.txt
-          echo "# Project README" > README.md
-
-      - name: Install RPM tools
-        run: sudo apt-get install -y rpm
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: linux-build-gcc
-          path: _build/
-
-      - name: Generate packages
-        run: |
-          cd _build/
-          mkdir -p _artifacts
-          cpack -G "DEB"
-          cpack -G "RPM"
-          mv *.deb *.rpm _artifacts/
-
-      - name: Upload packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-packages
-          path: _build/_artifacts/
-          retention-days: 1
-
-  release:
-    name: Create GitHub Release
-    needs: create-packages
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: linux-packages
-          path: release/
-
-      - name: Extract version from CMakeLists
-        run: |
-          version=$(grep -P ".*_VERSION_.* \d" CMakeLists.txt | sed 's/.*set(.*\(.\).\{1\}$/\1/' | sed -z 's/\n/./g' | sed 's/.$//')
-          echo "VERSION=$version" >> $GITHUB_ENV
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ env.VERSION }}
-          name: Release v${{ env.VERSION }}
-          body: "Linux packages release"
-          files: release/*
-          draft: false
-          prerelease: false
