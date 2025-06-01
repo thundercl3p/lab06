@@ -1,10 +1,15 @@
-name: Linux CI Pipeline
+name: Cross-Platform CI/CD Pipeline
 
-on: [push, pull_request]
+on: 
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   linux-build:
-    name: Build and Test on Linux
+    name: Build and Test (Linux)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -16,26 +21,157 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create required CPack files
+      - name: Create CPack metadata files
         run: |
-          echo "Simple project description" > DESCRIPTION
+          echo "Project description" > DESCRIPTION
           echo "MIT License" > LICENSE.txt
           echo "# Project README" > README.md
 
       - name: Configure CMake
-        run: cmake -H. -B_build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
 
       - name: Build project
-        run: cmake --build _build
+        run: cmake --build _build --parallel
 
-      - name: Test executables
+      - name: Run tests
         run: |
           echo "1 -5 6" | _build/solver_application/solver_app
           _build/hello_world_application/hello_world
 
-      - name: Upload build artifacts
+      - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-build-${{matrix.config.c_comp}}
           path: _build/
           retention-days: 1
+
+  windows-build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create CPack metadata files
+        run: |
+          echo "Project description" > DESCRIPTION
+          echo "MIT License" > LICENSE.txt
+          echo "# Project README" > README.md
+
+      - name: Configure CMake
+        run: cmake -B _build
+
+      - name: Build project (Release)
+        run: cmake --build _build --config Release
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: _build/
+          retention-days: 1
+
+  macos-build:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create CPack metadata files
+        run: |
+          echo "Project description" > DESCRIPTION
+          echo "MIT License" > LICENSE.txt
+          echo "# Project README" > README.md
+
+      - name: Configure CMake
+        run: cmake -B _build
+
+      - name: Build project
+        run: cmake --build _build
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: _build/
+          retention-days: 1
+
+  create-packages:
+    name: Create Packages
+    needs: [linux-build, windows-build, macos-build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y rpm
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.os == 'ubuntu-latest' && 'linux-build-gcc' || matrix.os == 'windows-latest' && 'windows-build' || 'macos-build' }}
+          path: _build/
+
+      - name: Generate packages
+        run: |
+          cd _build/
+          mkdir -p _artifacts
+          
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            cpack --config CPackSourceConfig.cmake
+            cpack -G "DEB"
+            cpack -G "RPM"
+            mv *.tar.gz *.zip *.deb *.rpm _artifacts/
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            cpack -G "NSIS"
+            cpack -G "WIX"
+            move *.exe *.msi _artifacts\
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            cpack -G "DragNDrop"
+            mv *.dmg _artifacts/
+          fi
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-packages
+          path: _build/_artifacts/
+          retention-days: 1
+
+  create-release:
+    name: Create Release
+    needs: create-packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all packages
+        run: |
+          mkdir -p release
+          artifacts=("linux-packages" "windows-packages" "macos-packages")
+          for artifact in "${artifacts[@]}"; do
+            gh run download --artifact $artifact --dir release
+          done
+
+      - name: Extract version
+        run: |
+          version=$(grep -P ".*_VERSION_.* \d" CMakeLists.txt | sed 's/.*set(.*\(.\).\{1\}$/\1/' | sed -z 's/\n/./g' | sed 's/.$//')
+          echo "VERSION=$version" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body: "Cross-platform release including Linux (DEB/RPM), Windows (MSI/EXE) and macOS (DMG) packages"
+          files: |
+            release/**/*
+          draft: false
+          prerelease: false
