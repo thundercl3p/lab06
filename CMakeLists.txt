@@ -1,11 +1,23 @@
-cmake_minimum_required(VERSION 3.5)
-project(FormatterProject)
+cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_STANDARD 11)
+project(solver-pckg)
 
-add_subdirectory(formatter_lib)
-add_subdirectory(formatter_ex_lib)
-add_subdirectory(solver_lib)
+set(PRINT_VERSION_MAJOR 0)
+set(PRINT_VERSION_MINOR 1)
+set(PRINT_VERSION_PATCH 0)
+set(PRINT_VERSION_TWEAK 1)
+set(PRINT_VERSION
+  ${PRINT_VERSION_MAJOR}.${PRINT_VERSION_MINOR}.${PRINT_VERSION_PATCH}.${PRINT_VERSION_TWEAK})
+set(PRINT_VERSION_STRING "v${PRINT_VERSION}")
+
 
 add_subdirectory(solver_application)
 add_subdirectory(hello_world_application)
+
+install(TARGETS solver_app
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+        
+include(CPackConfig.cmake)
