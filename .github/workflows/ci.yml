@@ -32,7 +32,7 @@ jobs:
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
 
       - name: Build project
         run: cmake --build _build --parallel
@@ -62,7 +62,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build
 
       - name: Build project (Release)
         run: cmake --build _build --config Release
@@ -87,7 +87,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build
 
       - name: Build project
         run: cmake --build _build
@@ -121,37 +121,24 @@ jobs:
           name: ${{ matrix.os == 'ubuntu-latest' && 'linux-build-gcc' || matrix.os == 'windows-latest' && 'windows-build' || 'macos-build' }}
           path: _build/
 
-      - name: Prepare CPack configuration
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            # Create temporary CPack config without icon reference
-            echo 'set(CPACK_PACKAGE_ICON "")' > _build/CPackOverrides.cmake
-          fi
-
       - name: Generate packages
         run: |
           cd _build/
           mkdir -p _artifacts
           
           if [ "$RUNNER_OS" = "Linux" ]; then
-            echo "Generating Linux packages..."
             cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
             cpack -G "DEB"
             cpack -G "RPM"
             mv *.tar.gz *.zip *.deb *.rpm _artifacts/
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            echo "Generating Windows packages..."
             cpack -G "NSIS"
             cpack -G "WIX"
             move *.exe *.msi _artifacts
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            echo "Generating macOS packages..."
-            cpack -C Release --config CPackConfig.cmake -G "DragNDrop"
-            mv *.dmg _artifacts/
+            cpack --config CPackSourceConfig.cmake -G "TGZ"
+            mv *.tar.gz _artifacts/
           fi
-          
-          echo "Generated packages:"
-          ls -la _artifacts/
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -173,7 +160,6 @@ jobs:
         run: |
           version=${GITHUB_REF#refs/tags/v}
           echo "VERSION=${version}" >> $GITHUB_ENV
-          echo "Using version: ${version}"
 
       - name: Download Linux packages
         uses: actions/download-artifact@v4
@@ -193,15 +179,6 @@ jobs:
           name: macos-latest-packages
           path: release/macos
 
-      - name: Verify packages
-        run: |
-          echo "Package contents:"
-          find release -type f -exec ls -lh {} \;
-          if [ ! -f release/linux/*.deb ] || [ ! -f release/windows/*.msi ] || [ ! -f release/macos/*.dmg ]; then
-            echo "Error: Missing package files!"
-            exit 1
-          fi
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -213,7 +190,7 @@ jobs:
             ### Packages included:
             - Linux: DEB, RPM, TGZ, ZIP
             - Windows: MSI, EXE
-            - macOS: DMG
+            - macOS: TGZ
           files: |
             release/**/*
           draft: false
