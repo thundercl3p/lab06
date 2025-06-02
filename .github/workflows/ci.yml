@@ -135,22 +135,13 @@ jobs:
             cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
             cpack -G "DEB"
             cpack -G "RPM"
-            for f in *.tar.gz *.zip *.deb *.rpm; do
-              mv "$f" "solver-${version}-${f#solver-}"
-            done
-            mv *.* _artifacts/
+            mv solver-*.tar.gz solver-*.zip solver_*.deb solver-*.rpm _artifacts/
           elif [ "$RUNNER_OS" = "Windows" ]; then
             cpack --config CPackSourceConfig.cmake -G "ZIP"
-            for f in *.zip; do
-              mv "$f" "solver-${version}-${f#solver-}"
-            done
-            mv *.* _artifacts/
+            mv solver-*.zip _artifacts/
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cpack --config CPackSourceConfig.cmake -G "TGZ"
-            for f in *.tar.gz; do
-              mv "$f" "solver-${version}-${f#solver-}"
-            done
-            mv *.* _artifacts/
+            mv solver-*.tar.gz _artifacts/
           fi
 
       - name: Upload packages
