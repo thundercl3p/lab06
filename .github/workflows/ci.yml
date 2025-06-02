@@ -32,7 +32,7 @@ jobs:
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build --parallel
@@ -62,7 +62,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build
+        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
       - name: Build project (Release)
         run: cmake --build _build --config Release
@@ -121,14 +121,11 @@ jobs:
           name: ${{ matrix.os == 'ubuntu-latest' && 'linux-build-gcc' || matrix.os == 'windows-latest' && 'windows-build' || 'macos-build' }}
           path: _build/
 
-      - name: Debug build contents
+      - name: Prepare CPack configuration
         run: |
-          echo "Contents of _build directory:"
-          ls -la _build/
-          if [ -f _build/CPackConfig.cmake ]; then
-            echo "CPack config found"
-          else
-            echo "CPack config missing!"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # Create temporary CPack config without icon reference
+            echo 'set(CPACK_PACKAGE_ICON "")' > _build/CPackOverrides.cmake
           fi
 
       - name: Generate packages
@@ -149,8 +146,7 @@ jobs:
             move *.exe *.msi _artifacts
           elif [ "$RUNNER_OS" = "macOS" ]; then
             echo "Generating macOS packages..."
-            cmake -DCPACK_PACKAGE_ICON="" ..
-            cpack -G "DragNDrop"
+            cpack -C Release --config CPackConfig.cmake -G "DragNDrop"
             mv *.dmg _artifacts/
           fi
           
