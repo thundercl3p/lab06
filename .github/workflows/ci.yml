@@ -1,8 +1,9 @@
 name: Cross-Platform CI/CD Pipeline
 
-on: 
+on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -21,11 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create CPack metadata files
+      - name: Create metadata files
         run: |
-          echo "Project description" > DESCRIPTION
+          echo "Quadratic equation solver" > DESCRIPTION
           echo "MIT License" > LICENSE.txt
-          echo "# Project README" > README.md
+          echo "# Solver Application" > README.md
+
+      - name: Install dependencies
+        run: sudo apt-get install -y rpm
 
       - name: Configure CMake
         run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
@@ -51,11 +55,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create CPack metadata files
+      - name: Create metadata files
         run: |
-          echo "Project description" > DESCRIPTION
+          echo "Quadratic equation solver" > DESCRIPTION
           echo "MIT License" > LICENSE.txt
-          echo "# Project README" > README.md
+          echo "# Solver Application" > README.md
 
       - name: Configure CMake
         run: cmake -B _build
@@ -76,11 +80,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create CPack metadata files
+      - name: Create metadata files
         run: |
-          echo "Project description" > DESCRIPTION
+          echo "Quadratic equation solver" > DESCRIPTION
           echo "MIT License" > LICENSE.txt
-          echo "# Project README" > README.md
+          echo "# Solver Application" > README.md
 
       - name: Configure CMake
         run: cmake -B _build
@@ -123,7 +127,7 @@ jobs:
           mkdir -p _artifacts
           
           if [ "$RUNNER_OS" == "Linux" ]; then
-            cpack --config CPackSourceConfig.cmake
+            cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
             cpack -G "DEB"
             cpack -G "RPM"
             mv *.tar.gz *.zip *.deb *.rpm _artifacts/
@@ -152,25 +156,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all packages
+      - name: Extract version from tag
         run: |
-          mkdir -p release
-          artifacts=("linux-packages" "windows-packages" "macos-packages")
-          for artifact in "${artifacts[@]}"; do
-            gh run download --artifact $artifact --dir release
-          done
+          version=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=${version}" >> $GITHUB_ENV
+          echo "Using version: ${version}"
 
-      - name: Extract version
+      - name: Download Linux packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ubuntu-latest-packages
+          path: release/linux
+
+      - name: Download Windows packages
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-packages
+          path: release/windows
+
+      - name: Download macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-packages
+          path: release/macos
+
+      - name: Verify packages
         run: |
-          version=$(grep -P ".*_VERSION_.* \d" CMakeLists.txt | sed 's/.*set(.*\(.\).\{1\}$/\1/' | sed -z 's/\n/./g' | sed 's/.$//')
-          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "Package contents:"
+          find release -type f -exec ls -lh {} \;
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ env.VERSION }}
-          name: Release v${{ env.VERSION }}
-          body: "Cross-platform release including Linux (DEB/RPM), Windows (MSI/EXE) and macOS (DMG) packages"
+          tag_name: ${{ github.ref }}
+          name: "Solver v${{ env.VERSION }}"
+          body: |
+            ## Solver Application v${{ env.VERSION }}
+
+            - Linux: DEB, RPM
+            - Windows: MSI, EXE
+            - macOS: DMG
           files: |
             release/**/*
           draft: false
