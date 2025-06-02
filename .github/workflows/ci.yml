@@ -12,13 +12,16 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build and Package
-    runs-on: ${{ matrix.os }}
+  linux-build:
+    name: Build and Test (Linux)
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    
+        config:
+          - { cpp_comp: "g++", c_comp: "gcc" }
+          - { cpp_comp: "clang++", c_comp: "clang" }
+
     steps:
       - uses: actions/checkout@v4
 
@@ -28,69 +31,174 @@ jobs:
           echo "MIT License" > LICENSE.txt
           echo "# Solver Application" > README.md
 
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install dependencies
         run: sudo apt-get install -y rpm
+
+      - name: Configure CMake
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
+
+      - name: Build project
+        run: cmake --build _build --parallel
+
+      - name: Run tests
+        run: |
+          echo "1 -5 6" | _build/solver_application/solver_app
+          _build/hello_world_application/hello_world
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-${{matrix.config.c_comp}}
+          path: _build/
+          retention-days: 1
+
+  windows-build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create metadata files
+        run: |
+          echo "Quadratic equation solver" > DESCRIPTION
+          echo "MIT License" > LICENSE.txt
+          echo "# Solver Application" > README.md
+
+      - name: Configure CMake
+        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
+
+      - name: Build project (Release)
+        run: cmake --build _build --config Release
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: _build/
+          retention-days: 1
+
+  macos-build:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create metadata files
+        run: |
+          echo "Quadratic equation solver" > DESCRIPTION
+          echo "MIT License" > LICENSE.txt
+          echo "# Solver Application" > README.md
 
       - name: Configure CMake
         run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
-        run: cmake --build _build --parallel
+        run: cmake --build _build
 
-      - name: Run tests (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo "1 -5 6" | _build/solver_application/solver_app
-          _build/hello_world_application/hello_world
-
-      - name: Package project
-        shell: bash
-        run: |
-          cd _build/
-          version=${GITHUB_REF#refs/tags/v}
-          
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            cpack --config CPackConfig.cmake -G "DEB;RPM"
-            cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
-            mkdir -p artifacts
-            mv *.deb *.rpm *.tar.gz *.zip artifacts/
-          elif [ "$RUNNER_OS" = "Windows" ]; then
-            cpack --config CPackSourceConfig.cmake -G "ZIP"
-            mkdir -p artifacts
-            mv *.zip artifacts/
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            cpack --config CPackSourceConfig.cmake -G "TGZ"
-            mkdir -p artifacts
-            mv *.tar.gz artifacts/
-          fi
-
-      - name: Upload artifacts
+      - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ matrix.os }}
-          path: _build/artifacts/
+          name: macos-build
+          path: _build/
           retention-days: 1
 
-  create-release:
-    name: Create Release
-    needs: build
+  create-packages:
+    name: Create Packages
+    needs: [linux-build, windows-build, macos-build]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y rpm libarchive-tools
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.os == 'ubuntu-latest' && 'linux-build-gcc' || matrix.os == 'windows-latest' && 'windows-build' || 'macos-build' }}
+          path: _build/
+
+      - name: Generate packages
+        shell: bash
+        run: |
+          cd _build/
+          mkdir -p _artifacts
+          version=${GITHUB_REF#refs/tags/v}
+          
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
+            cpack -G "DEB"
+            cpack -G "RPM"
+            for f in *.tar.gz *.zip *.deb *.rpm; do
+              mv "$f" "solver-${version}-${f#solver-}"
+            done
+            mv *.* _artifacts/
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            cpack --config CPackSourceConfig.cmake -G "ZIP"
+            for f in *.zip; do
+              mv "$f" "solver-${version}-${f#solver-}"
+            done
+            mv *.* _artifacts/
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            cpack --config CPackSourceConfig.cmake -G "TGZ"
+            for f in *.tar.gz; do
+              mv "$f" "solver-${version}-${f#solver-}"
+            done
+            mv *.* _artifacts/
+          fi
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-packages
+          path: _build/_artifacts/
+          retention-days: 1
+  
+  create-release:
+    name: Create Release
+    needs: create-packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+  
+    steps:
+      - uses: actions/checkout@v4
+  
       - name: Extract version from tag
         run: |
           version=${GITHUB_REF#refs/tags/v}
           echo "VERSION=${version}" >> $GITHUB_ENV
-
-      - name: Download all packages
+  
+      - name: Download Linux packages
         uses: actions/download-artifact@v4
         with:
-          path: release-packages
-
+          name: ubuntu-latest-packages
+          path: release/linux
+  
+      - name: Download Windows packages
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-packages
+          path: release/windows
+  
+      - name: Download macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-packages
+          path: release/macos
+  
+      - name: Filter only package files
+        run: |
+          mkdir -p release/packages
+          find release/linux/ -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/packages/ \;
+          find release/windows/ -type f \( -name '*.zip' \) -exec cp {} release/packages/ \;
+          find release/macos/ -type f \( -name '*.tar.gz' \) -exec cp {} release/packages/ \;
+  
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -98,14 +206,11 @@ jobs:
           name: "Solver v${{ env.VERSION }}"
           body: |
             ## Solver Application v${{ env.VERSION }}
-
+  
             ### Packages included:
             - Linux: DEB, RPM, TGZ, ZIP
             - Windows: ZIP
             - macOS: TGZ
-          files: |
-            release-packages/packages-ubuntu-latest/*
-            release-packages/packages-windows-latest/*
-            release-packages/packages-macos-latest/*
+          files: release/packages/*
           draft: false
           prerelease: false
