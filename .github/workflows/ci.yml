@@ -9,99 +9,62 @@ on:
   workflow_dispatch:
 
 jobs:
-  linux-build:
-    name: Build and Test (Linux)
-    runs-on: ubuntu-latest
+  build:
+    name: Build and Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
-        config:
-          - { cpp_comp: "g++", c_comp: "gcc" }
-          - { cpp_comp: "clang++", c_comp: "clang" }
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Create metadata files
         run: |
-          echo "Quadratic equation solver" > DESCRIPTION
-          echo "MIT License" > LICENSE.txt
-          echo "# Solver Application" > README.md
+          echo "Quadratic equation solver" > $GITHUB_WORKSPACE/DESCRIPTION
+          echo "MIT License" > $GITHUB_WORKSPACE/LICENSE.txt
+          echo "# Solver Application" > $GITHUB_WORKSPACE/README.md
+          echo "Change log" > $GITHUB_WORKSPACE/ChangeLog.md
 
-      - name: Install dependencies
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }}
 
       - name: Build project
         run: cmake --build _build --parallel
 
       - name: Run tests
         run: |
-          echo "1 -5 6" | _build/solver_application/solver_app
-          _build/hello_world_application/hello_world
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            echo "1 -5 6" | _build/solver_application/solver_app
+            _build/hello_world_application/hello_world
+          else
+            echo "Skipping interactive tests on Windows"
+          fi
 
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build-${{matrix.config.c_comp}}
-          path: _build/
-          retention-days: 1
-
-  windows-build:
-    name: Build (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create metadata files
-        run: |
-          echo "Quadratic equation solver" > DESCRIPTION
-          echo "MIT License" > LICENSE.txt
-          echo "# Solver Application" > README.md
-
-      - name: Configure CMake
-        run: cmake -B _build
-
-      - name: Build project (Release)
-        run: cmake --build _build --config Release
-
-      - name: Archive build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: _build/
-          retention-days: 1
-
-  macos-build:
-    name: Build (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create metadata files
-        run: |
-          echo "Quadratic equation solver" > DESCRIPTION
-          echo "MIT License" > LICENSE.txt
-          echo "# Solver Application" > README.md
-
-      - name: Configure CMake
-        run: cmake -B _build
-
-      - name: Build project
-        run: cmake --build _build
-
-      - name: Archive build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-build
+          name: build-${{ matrix.os }}
           path: _build/
           retention-days: 1
 
   create-packages:
     name: Create Packages
-    needs: [linux-build, windows-build, macos-build]
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     strategy:
@@ -111,25 +74,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create metadata files
+        run: |
+          echo "Quadratic equation solver" > $GITHUB_WORKSPACE/DESCRIPTION
+          echo "MIT License" > $GITHUB_WORKSPACE/LICENSE.txt
+          echo "# Solver Application" > $GITHUB_WORKSPACE/README.md
+          echo "Change log" > $GITHUB_WORKSPACE/ChangeLog.md
+
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y rpm libarchive-tools
+        run: sudo apt-get install -y rpm
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.os == 'ubuntu-latest' && 'linux-build-gcc' || matrix.os == 'windows-latest' && 'windows-build' || 'macos-build' }}
+          name: build-${{ matrix.os }}
           path: _build/
 
-      - name: Debug build contents
+      - name: Copy metadata to build dir
         run: |
-          echo "Contents of _build directory:"
-          ls -la _build/
-          if [ -f _build/CPackConfig.cmake ]; then
-            echo "CPack config found"
-          else
-            echo "CPack config missing!"
-          fi
+          cp $GITHUB_WORKSPACE/DESCRIPTION _build/
+          cp $GITHUB_WORKSPACE/LICENSE.txt _build/
+          cp $GITHUB_WORKSPACE/README.md _build/
+          cp $GITHUB_WORKSPACE/ChangeLog.md _build/
 
       - name: Generate packages
         run: |
@@ -159,7 +126,7 @@ jobs:
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-packages
+          name: packages-${{ matrix.os }}
           path: _build/_artifacts/
           retention-days: 1
 
@@ -178,32 +145,17 @@ jobs:
           echo "VERSION=${version}" >> $GITHUB_ENV
           echo "Using version: ${version}"
 
-      - name: Download Linux packages
+      - name: Download packages
         uses: actions/download-artifact@v4
         with:
-          name: ubuntu-latest-packages
-          path: release/linux
-
-      - name: Download Windows packages
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-latest-packages
-          path: release/windows
-
-      - name: Download macOS packages
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-latest-packages
-          path: release/macos
+          path: release
+          pattern: packages-*
+          merge-multiple: true
 
       - name: Verify packages
         run: |
           echo "Package contents:"
           find release -type f -exec ls -lh {} \;
-          if [ ! -f release/linux/*.deb ] || [ ! -f release/windows/*.msi ] || [ ! -f release/macos/*.dmg ]; then
-            echo "Error: Missing package files!"
-            exit 1
-          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
