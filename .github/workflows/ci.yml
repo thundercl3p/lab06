@@ -15,13 +15,6 @@ jobs:
   linux-build:
     name: Build and Test (Linux)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - { cpp_comp: "g++", c_comp: "gcc" }
-          - { cpp_comp: "clang++", c_comp: "clang" }
-
     steps:
       - uses: actions/checkout@v4
 
@@ -35,20 +28,18 @@ jobs:
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build --parallel
 
-      - name: Run tests
-        run: |
-          echo "1 -5 6" | _build/solver_application/solver_app
-          _build/hello_world_application/hello_world
+      - name: Run solver test
+        run: echo "1 -5 6" | _build/solver_application/solver_app
 
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build-${{matrix.config.c_comp}}
+          name: linux-build
           path: _build/
           retention-days: 1
 
@@ -67,8 +58,11 @@ jobs:
       - name: Configure CMake
         run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
-      - name: Build project (Release)
+      - name: Build project
         run: cmake --build _build --config Release
+
+      - name: Run solver test
+        run: _build\solver_application\Release\solver_app.exe <<< "1 -5 6"
 
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
@@ -95,6 +89,9 @@ jobs:
       - name: Build project
         run: cmake --build _build
 
+      - name: Run solver test
+        run: echo "1 -5 6" | _build/solver_application/solver_app
+
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -117,28 +114,51 @@ jobs:
           version=${GITHUB_REF#refs/tags/v}
           echo "VERSION=${version}" >> $GITHUB_ENV
 
-      - name: Install dependencies
-        run: sudo apt-get install -y rpm libarchive-tools
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          sudo apt-get install -y osslsigncode
+          sudo apt-get install -y wine
 
-      - name: Download artifacts
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          path: _build
+          name: linux-build
+          path: _build/linux
 
-      - name: Generate packages
-        shell: bash
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: _build/windows
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: _build/macos
+
+      - name: Generate Linux packages
         run: |
-          cd _build
-          mkdir -p artifacts
-          
-          cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
-          cpack -G "DEB"
-          cpack -G "RPM"
-          
-          mv *.tar.gz artifacts/
-          mv *.zip artifacts/
-          mv *.deb artifacts/
-          mv *.rpm artifacts/
+          cd _build/linux
+          cpack --config CPackConfig.cmake -G "TGZ;ZIP;DEB;RPM"
+          mkdir -p ../artifacts
+          mv *.tar.gz *.zip *.deb *.rpm ../artifacts/
+
+      - name: Generate Windows packages
+        run: |
+          cd _build/windows
+          cpack --config CPackConfig.cmake -G "WIX;ZIP"
+          mkdir -p ../artifacts
+          mv *.msi *.zip ../artifacts/
+
+      - name: Generate macOS packages
+        run: |
+          cd _build/macos
+          cpack --config CPackConfig.cmake -G "TGZ;ZIP;DragNDrop"
+          mkdir -p ../artifacts
+          mv *.tar.gz *.zip *.dmg ../artifacts/
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -171,9 +191,10 @@ jobs:
             ## Solver Application v${{ env.VERSION }}
 
             ### Packages included:
-            - Linux: DEB, RPM, TGZ, ZIP
-            - Windows: ZIP
-            - macOS: TGZ
+            - Source archives: .tar.gz, .zip
+            - Linux packages: .deb, .rpm
+            - Windows package: .msi
+            - macOS package: .dmg
           files: |
             release-files/*
           draft: false
