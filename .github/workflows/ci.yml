@@ -122,6 +122,7 @@ jobs:
           path: _build/
 
       - name: Generate packages
+        shell: bash
         run: |
           cd _build/
           mkdir -p _artifacts
@@ -134,7 +135,7 @@ jobs:
           elif [ "$RUNNER_OS" = "Windows" ]; then
             cpack -G "NSIS"
             cpack -G "WIX"
-            move *.exe *.msi _artifacts
+            mv *.exe *.msi _artifacts/
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cpack --config CPackSourceConfig.cmake -G "TGZ"
             mv *.tar.gz _artifacts/
