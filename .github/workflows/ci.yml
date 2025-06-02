@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   linux-build:
     name: Build and Test (Linux)
@@ -180,7 +183,7 @@ jobs:
           path: release/macos
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref }}
           name: "Solver v${{ env.VERSION }}"
