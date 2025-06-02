@@ -32,7 +32,7 @@ jobs:
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}}
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build --parallel
@@ -62,7 +62,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build
+        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
       - name: Build project (Release)
         run: cmake --build _build --config Release
@@ -87,7 +87,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build
+        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build
@@ -133,9 +133,8 @@ jobs:
             cpack -G "RPM"
             mv *.tar.gz *.zip *.deb *.rpm _artifacts/
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            cpack -G "NSIS"
-            cpack -G "WIX"
-            mv *.exe *.msi _artifacts/
+            cpack --config CPackSourceConfig.cmake -G "ZIP"
+            mv *.zip _artifacts/
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cpack --config CPackSourceConfig.cmake -G "TGZ"
             mv *.tar.gz _artifacts/
@@ -190,7 +189,7 @@ jobs:
 
             ### Packages included:
             - Linux: DEB, RPM, TGZ, ZIP
-            - Windows: MSI, EXE
+            - Windows: ZIP
             - macOS: TGZ
           files: |
             release/**/*
