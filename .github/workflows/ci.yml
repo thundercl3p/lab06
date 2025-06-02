@@ -114,6 +114,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Extract version from tag
+        run: |
+          version=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=${version}" >> $GITHUB_ENV
+
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y rpm libarchive-tools
@@ -134,13 +139,16 @@ jobs:
             cpack --config CPackSourceConfig.cmake -G "TGZ;ZIP"
             cpack -G "DEB"
             cpack -G "RPM"
-            mv *.tar.gz *.zip *.deb *.rpm _artifacts/
+            mv *.tar.gz _artifacts/solver-${{ env.VERSION }}-Linux-Source.tar.gz
+            mv *.zip _artifacts/solver-${{ env.VERSION }}-Linux-Source.zip
+            mv *.deb _artifacts/solver-${{ env.VERSION }}-Linux.deb
+            mv *.rpm _artifacts/solver-${{ env.VERSION }}-Linux.rpm
           elif [ "$RUNNER_OS" = "Windows" ]; then
             cpack --config CPackSourceConfig.cmake -G "ZIP"
-            mv *.zip _artifacts/
+            mv *.zip _artifacts/solver-${{ env.VERSION }}-Windows-Source.zip
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cpack --config CPackSourceConfig.cmake -G "TGZ"
-            mv *.tar.gz _artifacts/
+            mv *.tar.gz _artifacts/solver-${{ env.VERSION }}-macOS-Source.tar.gz
           fi
 
       - name: Upload packages
@@ -158,11 +166,6 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        run: |
-          version=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=${version}" >> $GITHUB_ENV
 
       - name: Download Linux packages
         uses: actions/download-artifact@v4
@@ -195,6 +198,11 @@ jobs:
             - Windows: ZIP
             - macOS: TGZ
           files: |
-            release/**/*
+            release/linux/solver-${{ env.VERSION }}-Linux-Source.tar.gz
+            release/linux/solver-${{ env.VERSION }}-Linux-Source.zip
+            release/linux/solver-${{ env.VERSION }}-Linux.deb
+            release/linux/solver-${{ env.VERSION }}-Linux.rpm
+            release/windows/solver-${{ env.VERSION }}-Windows-Source.zip
+            release/macos/solver-${{ env.VERSION }}-macOS-Source.tar.gz
           draft: false
           prerelease: false
