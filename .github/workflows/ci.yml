@@ -35,7 +35,7 @@ jobs:
         run: sudo apt-get install -y rpm
 
       - name: Configure CMake
-        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build -DCMAKE_CXX_COMPILER=${{matrix.config.cpp_comp}} -DCMAKE_C_COMPILER=${{matrix.config.c_comp}} -DCPACK_PACKAGE_VERSION="${{ github.ref_name#v }}" -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build --parallel
@@ -65,7 +65,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build -DCPACK_PACKAGE_VERSION="${{ github.ref_name#v }}" -DCPACK_PACKAGE_ICON=""
 
       - name: Build project (Release)
         run: cmake --build _build --config Release
@@ -90,7 +90,7 @@ jobs:
           echo "# Solver Application" > README.md
 
       - name: Configure CMake
-        run: cmake -B _build -DCPACK_PACKAGE_ICON=""
+        run: cmake -B _build -DCPACK_PACKAGE_VERSION="${{ github.ref_name#v }}" -DCPACK_PACKAGE_ICON=""
 
       - name: Build project
         run: cmake --build _build
@@ -182,6 +182,11 @@ jobs:
           name: macos-latest-packages
           path: release/macos
 
+      - name: Prepare unique artifacts
+        run: |
+          mkdir -p release_artifacts
+          find release -type f -exec cp {} release_artifacts/ \;
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -194,7 +199,6 @@ jobs:
             - Linux: DEB, RPM, TGZ, ZIP
             - Windows: ZIP
             - macOS: TGZ
-          files: |
-            release/**/*
+          files: release_artifacts/*
           draft: false
           prerelease: false
